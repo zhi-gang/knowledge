@@ -4,15 +4,26 @@
 //!
 //! author: ZhiGang
 //!
+//!
+//! TODO: add logger
+//!
 
 use cang_jie::{CangJieTokenizer, CANG_JIE};
 use chrono::Local;
 use serde::Deserialize;
+use serde::Serialize;
 use std::fs;
-use std::io::BufRead;
-use std::io::BufReader;
+use tantivy::collector::TopDocs;
+use tantivy::query::BooleanQuery;
+use tantivy::query::Query;
+use tantivy::DocAddress;
+use tantivy::Searcher;
+// use std::io::BufRead;
+// use std::io::BufReader;
 use std::path::Path;
 use tantivy::doc;
+use tantivy::query::QueryParser;
+use tantivy::query_grammar::Occur;
 use tantivy::schema::*;
 use tantivy::Index;
 use tantivy::ReloadPolicy;
@@ -67,17 +78,137 @@ pub fn load_index(index_path: String) -> tantivy::Result<Index> {
 }
 
 /// Add a single new document to the repository
-/// 
+///
 /// parameters:
 ///     index: reference to the index
 ///     doc: document to add
-/// 
+///
 /// returns:
 ///     created time in String or error
 pub fn add_doc(index: &Index, doc: KnownledgeDocument) -> tantivy::Result<String> {
     let mut index_writer = index.writer(50_000_000)?;
 
     let now = now();
+    let document = make_doc(index, &doc, &*now)?;
+    index_writer.add_document(document)?;
+    index_writer.commit()?;
+    Ok(now)
+}
+
+/// Add a batch documents to the repository
+///
+/// parameters:
+///     index: reference to the index
+///     docs: documents to add
+///
+/// returns:
+///     () or error
+pub fn add_doc_in_batch(index: &Index, docs: Vec<KnownledgeDocument>) -> tantivy::Result<()> {
+    let mut index_writer = index.writer(50_000_000)?;
+
+    for doc in docs {
+        let now = now();
+        let document = make_doc(index, &doc, &*now)?;
+        index_writer.add_document(document)?;
+        index_writer.commit()?;
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub enum Combiner {
+    AND,
+    OR,
+}
+
+pub fn query(
+    index: &Index,
+    keys: Vec<String>,
+    op: Combiner,
+    num: usize,
+) -> tantivy::Result<Vec<KnownledgeDocument>> {
+    if keys.len() == 0 {
+        return Ok(vec![]);
+    }
+    let reader = index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::OnCommit)
+        .try_into()?;
+
+    let searcher = reader.searcher();
+
+    let schema = index.schema();
+    let title = schema.get_field("title").unwrap();
+    let body = schema.get_field("body").unwrap();
+    let query_parser = QueryParser::for_index(&index, vec![title, body]);
+
+    // let logic_op = match op {
+    //     Combiner::AND => Occur::Must,
+    //     Combiner::OR => Occur::Should,
+    // };
+
+    // let mut all_query = Vec::<(Occur, Box<dyn Query>)>::with_capacity(keys.len());
+
+    // for key in keys {
+    //     let query = query_parser.parse_query(&*key)?;
+    //     all_query.push((logic_op, query));
+    // }
+    let bool_query = build_bool_query(&query_parser,op,keys)?;
+    let top_docs = searcher.search(&bool_query, &TopDocs::with_limit(num))?;
+
+    let mut result: Vec<KnownledgeDocument> = Vec::with_capacity(num);
+    for (_score, doc_address) in top_docs {
+        let retrieved_doc = searcher.doc(doc_address)?;
+        let title_str = retrieved_doc
+            .get_first(title)
+            .map(|field_value| match field_value {
+                Value::Str(text) => text.to_string(),
+                _ => String::new(), // Handle other value types as needed
+            })
+            .expect("could not find title in the document");
+
+        let body_str = retrieved_doc
+            .get_first(body)
+            .map(|field_value| match field_value {
+                Value::Str(text) => text.to_string(),
+                _ => String::new(), // Handle other value types as needed
+            })
+            .expect("could not find body in the document");
+        result.push(KnownledgeDocument {
+            title: title_str,
+            body: body_str,
+        });
+    }
+
+    Ok(result)
+}
+
+fn build_bool_query(query_parser:&QueryParser, op: Combiner, keys: Vec<String>)-> tantivy::Result<BooleanQuery>{
+
+    // let schema = index.schema();
+    // let title = schema.get_field("title").unwrap();
+    // let body = schema.get_field("body").unwrap();
+    // let query_parser = QueryParser::for_index(&index, vec![title, body]);
+    let logic_op = match op {
+        Combiner::AND => Occur::Must,
+        Combiner::OR => Occur::Should,
+    };
+
+    let mut all_query = Vec::<(Occur, Box<dyn Query>)>::with_capacity(keys.len());
+
+    for key in keys {
+        let query = query_parser.parse_query(&*key)?;
+        all_query.push((logic_op, query));
+    }
+    Ok(BooleanQuery::new(all_query))
+}
+
+fn make_doc<'a>(
+    index: &Index,
+    doc: &KnownledgeDocument,
+    now: &'a str,
+) -> tantivy::Result<Document> {
     let content = format!(
         "{{
         \"create_at\": \"{}\",
@@ -87,10 +218,8 @@ pub fn add_doc(index: &Index, doc: KnownledgeDocument) -> tantivy::Result<String
         now, doc.title, doc.body,
     );
     let schema = index.schema();
-    let doc = schema.parse_document(content.as_str())?;
-    index_writer.add_document(doc)?;
-    index_writer.commit()?;
-    Ok(now)
+    let document = schema.parse_document(content.as_str())?;
+    Ok(document)
 }
 
 /// create schema
@@ -121,6 +250,7 @@ fn make_schema() -> Schema {
 fn now() -> String {
     Local::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }
+
 // fn add_documents(index: &Index, schema: &Schema) -> tantivy::Result<()> {
 //     let mut index_writer = index.writer(50_000_000)?;
 //     let title = schema.get_field("title")?;
