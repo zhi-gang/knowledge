@@ -12,12 +12,11 @@ use cang_jie::{CangJieTokenizer, CANG_JIE};
 use chrono::Local;
 use serde::Deserialize;
 use serde::Serialize;
+use tantivy::IndexReader;
 use std::fs;
 use tantivy::collector::TopDocs;
 use tantivy::query::BooleanQuery;
 use tantivy::query::Query;
-use tantivy::DocAddress;
-use tantivy::Searcher;
 // use std::io::BufRead;
 // use std::io::BufReader;
 use std::path::Path;
@@ -34,19 +33,24 @@ pub struct KnownledgeDocument {
     body: String,
 }
 
-/// function that will create tantivy index in the path
-/// it will clear the path first, everything in the path will be removed
-///
-/// parameter:
-///     index_path: path to create index
-///
-/// returns: () or Error if index creation failed
-///
-/// the schema is solid which has three fields: title, body and create_at
+/// The function that will create tantivy index in the path
+/// it will clear the path first, everything in the path will be removed.
+/// 
+/// The schema is solid which has three fields: title, body and create_at
 /// title is Text field in Chinese characters
 /// body is Text field in Chinese characters
 /// create_at is Date field which auto generated when create the document,
 /// it will use the value when remove document
+///
+/// # Arguments
+/// 
+/// *`index_path` - path to create index
+///
+/// # Returns: 
+/// 
+/// () or Error if index creation failed
+///
+
 ///
 pub fn create_index(index_path: String) -> tantivy::Result<()> {
     fs::remove_dir_all(&*index_path)?;
@@ -63,56 +67,69 @@ pub fn create_index(index_path: String) -> tantivy::Result<()> {
 /// Load index from path
 /// It will register Cang-jie Tokenizer for Chinese characters
 ///
-/// parameters:
-///     index_path - path to load index from
+/// # Arguments
+/// 
+/// * `index_path` - path to load index from
 ///
-/// returns:
-///     Index or error
+/// # Returns:
+/// 
+/// Index or error
 ///
-pub fn load_index(index_path: String) -> tantivy::Result<Index> {
+pub fn load_index(index_path: String) -> tantivy::Result<(Index, IndexReader)> {
     let index = Index::open_in_dir(index_path)?;
     index
         .tokenizers()
-        .register(CANG_JIE, CangJieTokenizer::default()); // Build c
-    Ok(index)
+        .register(CANG_JIE, CangJieTokenizer::default());
+    let reader = index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::OnCommit)
+        .try_into()?;
+    Ok((index, reader))
 }
 
 /// Add a single new document to the repository
 ///
-/// parameters:
-///     index: reference to the index
-///     doc: document to add
+/// # Arguments
+/// 
+/// * `index` - The reference to the tantivy index
+/// * `doc` - The document to be add
+/// * `reader` - The global tantivy reader
 ///
-/// returns:
-///     created time in String or error
-pub fn add_doc(index: &Index, doc: KnownledgeDocument) -> tantivy::Result<String> {
+///  # Returns:
+/// 
+/// The create time in string or error
+pub fn add_doc(index: &Index, doc: KnownledgeDocument, reader: &IndexReader) -> tantivy::Result<String> {
     let mut index_writer = index.writer(50_000_000)?;
 
     let now = now();
     let document = make_doc(index, &doc, &*now)?;
     index_writer.add_document(document)?;
     index_writer.commit()?;
+    reader.reload()?; //refresh the reader
     Ok(now)
 }
 
 /// Add a batch documents to the repository
 ///
-/// parameters:
-///     index: reference to the index
-///     docs: documents to add
+/// # Arguments
+/// 
+/// * `index` - The reference to the tantivy index
+/// * `docs` - The documents to be add
+/// * `reader` - The global tantivy reader
 ///
-/// returns:
-///     () or error
-pub fn add_doc_in_batch(index: &Index, docs: Vec<KnownledgeDocument>) -> tantivy::Result<()> {
+///  # Returns:
+/// 
+/// () or error
+pub fn add_doc_in_batch(index: &Index, docs: Vec<KnownledgeDocument>, reader: &IndexReader) -> tantivy::Result<()> {
     let mut index_writer = index.writer(50_000_000)?;
 
     for doc in docs {
         let now = now();
         let document = make_doc(index, &doc, &*now)?;
         index_writer.add_document(document)?;
-        index_writer.commit()?;
     }
-
+    index_writer.commit()?;
+    reader.reload()?;  //refersh the reader;
     Ok(())
 }
 
@@ -122,8 +139,22 @@ pub enum Combiner {
     OR,
 }
 
+/// Query the documents for the given `keys` max `num` results.
+///
+/// # Arguments
+///
+/// * `index` - The tantivy index to query.
+/// * `reader` - The global tantivy reader.
+/// * `keys` - The search keys to query with.
+/// * `op` - The combiner to use for multiple keys.
+/// * `num` - The maximum number of results to return.
+///
+/// # Returns
+///
+/// A vector of `KnownledgeDocument`s that match the search keys.
 pub fn query(
     index: &Index,
+    reader: &IndexReader,
     keys: Vec<String>,
     op: Combiner,
     num: usize,
@@ -131,10 +162,8 @@ pub fn query(
     if keys.len() == 0 {
         return Ok(vec![]);
     }
-    let reader = index
-        .reader_builder()
-        .reload_policy(ReloadPolicy::OnCommit)
-        .try_into()?;
+
+    // reader.reload()?; //reload in udpate APIs
 
     let searcher = reader.searcher();
 
@@ -143,18 +172,7 @@ pub fn query(
     let body = schema.get_field("body").unwrap();
     let query_parser = QueryParser::for_index(&index, vec![title, body]);
 
-    // let logic_op = match op {
-    //     Combiner::AND => Occur::Must,
-    //     Combiner::OR => Occur::Should,
-    // };
-
-    // let mut all_query = Vec::<(Occur, Box<dyn Query>)>::with_capacity(keys.len());
-
-    // for key in keys {
-    //     let query = query_parser.parse_query(&*key)?;
-    //     all_query.push((logic_op, query));
-    // }
-    let bool_query = build_bool_query(&query_parser,op,keys)?;
+    let bool_query = build_bool_query(&query_parser, op, keys)?;
     let top_docs = searcher.search(&bool_query, &TopDocs::with_limit(num))?;
 
     let mut result: Vec<KnownledgeDocument> = Vec::with_capacity(num);
@@ -184,8 +202,11 @@ pub fn query(
     Ok(result)
 }
 
-fn build_bool_query(query_parser:&QueryParser, op: Combiner, keys: Vec<String>)-> tantivy::Result<BooleanQuery>{
-
+fn build_bool_query(
+    query_parser: &QueryParser,
+    op: Combiner,
+    keys: Vec<String>,
+) -> tantivy::Result<BooleanQuery> {
     // let schema = index.schema();
     // let title = schema.get_field("title").unwrap();
     // let body = schema.get_field("body").unwrap();
