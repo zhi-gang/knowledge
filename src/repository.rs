@@ -469,7 +469,6 @@ mod tests {
         println!("{:?}", res2.get(0));
         assert_eq!(1, res2.len());
     }
-
     fn delete_test() {
         let begin = std::time::Instant::now();
         let (index, reader) = load_index("index_test").unwrap();
