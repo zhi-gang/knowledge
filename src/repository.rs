@@ -149,16 +149,16 @@ pub fn load_index(index_path: &str) -> tantivy::Result<(Index, IndexReader)> {
 /// # Arguments
 ///
 /// * `index` - The reference to the tantivy index
-/// * `doc` - The document to be add
 /// * `reader` - The global tantivy reader
+/// * `doc` - The document to be add
 ///
 ///  # Returns:
 ///
 /// The create time in string or error
 pub fn add_doc(
     index: &Index,
-    doc: KnownledgeDocument,
     reader: &IndexReader,
+    doc: KnownledgeDocument,
 ) -> tantivy::Result<String> {
     let mut index_writer = index.writer(50_000_000)?;
 
@@ -174,16 +174,16 @@ pub fn add_doc(
 /// # Arguments
 ///
 /// * `index` - The reference to the tantivy index
-/// * `docs` - The documents to be add
 /// * `reader` - The global tantivy reader
+/// * `docs` - The documents to be add
 ///
 ///  # Returns:
 ///
 /// () or error
 pub fn add_doc_in_batch(
     index: &Index,
-    docs: Vec<KnownledgeDocument>,
     reader: &IndexReader,
+    docs: Vec<KnownledgeDocument>,
 ) -> tantivy::Result<()> {
     let mut index_writer = index.writer(50_000_000)?;
 
@@ -232,7 +232,7 @@ pub fn query_title_body(
     let searcher = reader.searcher();
     let top_docs: Vec<(f32, tantivy::DocAddress)> =
         searcher.search(&bool_query, &TopDocs::with_limit(num))?;
-    build_results(&searcher, top_docs, num,  &title, &body, &create_at)
+    build_results(&searcher, top_docs, num, &title, &body, &create_at)
 }
 /// Query the documents for the given `key` on Title
 /// Max `num` results.
@@ -260,7 +260,7 @@ pub fn query_title(
 
     let searcher = reader.searcher();
     let top_docs = searcher.search(&query, &TopDocs::with_limit(num))?;
-    build_results(&searcher, top_docs, num,  &title, &body, &create_at)
+    build_results(&searcher, top_docs, num, &title, &body, &create_at)
 }
 fn build_results(
     searcher: &Searcher,
@@ -293,7 +293,7 @@ fn get_fields(index: &Index) -> tantivy::Result<(Field, Field, Field)> {
 }
 /// Delete all documents in the repository
 pub fn delele_all(index: &Index, reader: &IndexReader) -> tantivy::Result<()> {
-    let mut index_writer = index.writer(10_000_000)?;
+    let mut index_writer = index.writer(15_000_000)?;
     index_writer.delete_all_documents()?;
     index_writer.commit()?;
     reader.reload()?;
@@ -317,17 +317,18 @@ pub fn delete(
     title_key: &str,
     ts: &str,
 ) -> tantivy::Result<()> where {
-    let schema = index.schema();
-    let title = schema.get_field("title").unwrap();
-    let create_at = schema.get_field("create_at").unwrap();
+    let (title, _, create_at)= get_fields(index)?;
 
     let query_parser_ts = QueryParser::for_index(&index, vec![create_at]);
-    let query_ts = query_parser_ts.parse_query(&*format!("\"create_at:\"{}\"", ts))?;
+    let query_ts = query_parser_ts.parse_query(&*format!("create_at:\"{}\"", ts))?;
     let query_parser_title = QueryParser::for_index(&index, vec![title]);
     let query_title = query_parser_title.parse_query(title_key)?;
     let bool_query = BooleanQuery::new(vec![(Occur::Must, query_ts), (Occur::Must, query_title)]);
 
-    let mut index_writer = index.writer(10_000_000)?;
+    let top_docs = reader.searcher().search(&bool_query, &TopDocs::with_limit(1))?;
+    println!("top_docs: {:?}", top_docs.len());
+
+    let mut index_writer = index.writer(15_000_000)?;
     index_writer.delete_query(Box::new(bool_query))?;
     index_writer.commit()?;
     reader.reload()?;
@@ -407,13 +408,18 @@ mod tests {
     fn test_now() {
         let now = now();
         println!("now : {}", now);
-        assert!(now.len() == 23);
+        assert!(now.len() == 24  );
         assert!(now.contains('-'));
         assert!(now.contains('T'));
         assert!(now.contains(':'));
         assert!(now.contains('.'));
     }
     #[test]
+    fn test_all(){
+        create_repository();
+        load_and_search();
+        delete_test();
+    }
     fn create_repository() {
         let begin = std::time::Instant::now();
         let (index, index_reader) = create_index("index_test").unwrap();
@@ -438,13 +444,12 @@ mod tests {
                 line.clear();
             }
         }
-        add_doc_in_batch(&index, docs, &index_reader).unwrap();
+        add_doc_in_batch(&index, &index_reader, docs).unwrap();
         let search = index_reader.searcher();
         assert_eq!(9774, search.num_docs());
         let end = std::time::Instant::now();
         println!("create cost: {:?}", end.duration_since(begin));
     }
-    #[test]
     fn load_and_search() {
         let begin = std::time::Instant::now();
         let (index, reader) = load_index("index_test").unwrap();
@@ -460,8 +465,33 @@ mod tests {
             query.duration_since(loaded)
         );
 
-        let res2 = query_title(&index, &reader, "湿气",10).unwrap();
+        let res2 = query_title(&index, &reader, "湿气", 10).unwrap();
         println!("{:?}", res2.get(0));
         assert_eq!(1, res2.len());
+    }
+
+    fn delete_test() {
+        let begin = std::time::Instant::now();
+        let (index, reader) = load_index("index_test").unwrap();
+
+        delele_all(&index, &reader).unwrap();
+        add_doc(
+            &index,
+            &reader,
+            KnownledgeDocument {
+                title: "我们一起去唱歌".to_string(),
+                body: "天天向上".to_string(),
+            },
+        )
+        .unwrap();
+        let r = query_title(&index, &reader, "我们", 1).unwrap();
+        assert_eq!(r.len(), 1);
+        // println!("{:?}", r.get(0));
+        let ts = &*r.get(0).unwrap().create_at;
+        delete(&index, &reader, "我们一起去唱歌", ts).unwrap();
+        let serach = reader.searcher();
+        assert_eq!(serach.num_docs(), 0);
+        let end = std::time::Instant::now();
+        println!("total cost {:?}", end.duration_since(begin));
     }
 }
