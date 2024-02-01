@@ -33,13 +33,11 @@ pub struct KnownledgeDocument {
     title: String,
     body: String,
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KnownledgeDocumentWithTime {
     doc: KnownledgeDocument,
     create_at: String,
 }
-
 impl KnownledgeDocumentWithTime {
     fn pick_text_field(
         retrieved_doc: &Document,
@@ -87,13 +85,11 @@ impl KnownledgeDocumentWithTime {
         })
     }
 }
-
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub enum Combiner {
     AND,
     OR,
 }
-
 /// The function that will create tantivy index in the path
 /// it will clear the path first, everything in the path will be removed.
 ///
@@ -148,7 +144,6 @@ pub fn load_index(index_path: &str) -> tantivy::Result<(Index, IndexReader)> {
         .try_into()?;
     Ok((index, reader))
 }
-
 /// Add a single new document to the repository
 ///
 /// # Arguments
@@ -174,7 +169,6 @@ pub fn add_doc(
     reader.reload()?; //refresh the reader
     Ok(now)
 }
-
 /// Add a batch documents to the repository
 ///
 /// # Arguments
@@ -289,7 +283,6 @@ fn build_results(
     }
     Ok(result)
 }
-
 fn get_fields(index: &Index) -> tantivy::Result<(Field, Field, Field)> {
     let schema = index.schema();
     let title = schema.get_field("title")?;
@@ -298,8 +291,6 @@ fn get_fields(index: &Index) -> tantivy::Result<(Field, Field, Field)> {
 
     Ok((title, body, create_at))
 }
-
-
 /// Delete all documents in the repository
 pub fn delele_all(index: &Index, reader: &IndexReader) -> tantivy::Result<()> {
     let mut index_writer = index.writer(10_000_000)?;
@@ -360,7 +351,6 @@ fn build_bool_query(
     }
     Ok(BooleanQuery::new(all_query))
 }
-
 fn make_doc(index: &Index, doc: &KnownledgeDocument, now: &str) -> tantivy::Result<Document> {
     let content = format!(
         "{{
@@ -374,7 +364,6 @@ fn make_doc(index: &Index, doc: &KnownledgeDocument, now: &str) -> tantivy::Resu
     let document = schema.parse_document(content.as_str())?;
     Ok(document)
 }
-
 /// Create schema
 ///  
 /// #Fields
@@ -401,7 +390,6 @@ fn make_schema() -> Schema {
 
     schema_builder.build()
 }
-
 /// Get tantivy formatted date of current local time
 fn now() -> String {
     // Local::now().to_rfc3339()
@@ -425,7 +413,6 @@ mod tests {
         assert!(now.contains(':'));
         assert!(now.contains('.'));
     }
-
     #[test]
     fn create_repository() {
         let begin = std::time::Instant::now();
@@ -457,7 +444,6 @@ mod tests {
         let end = std::time::Instant::now();
         println!("create cost: {:?}", end.duration_since(begin));
     }
-
     #[test]
     fn load_and_search() {
         let begin = std::time::Instant::now();
