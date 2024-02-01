@@ -12,11 +12,11 @@ use cang_jie::{CangJieTokenizer, CANG_JIE};
 use chrono::Local;
 use serde::Deserialize;
 use serde::Serialize;
-use tantivy::IndexReader;
 use std::fs;
 use tantivy::collector::TopDocs;
 use tantivy::query::BooleanQuery;
 use tantivy::query::Query;
+use tantivy::IndexReader;
 // use std::io::BufRead;
 // use std::io::BufReader;
 use std::path::Path;
@@ -35,7 +35,7 @@ pub struct KnownledgeDocument {
 
 /// The function that will create tantivy index in the path
 /// it will clear the path first, everything in the path will be removed.
-/// 
+///
 /// The schema is solid which has three fields: title, body and create_at
 /// title is Text field in Chinese characters
 /// body is Text field in Chinese characters
@@ -43,11 +43,11 @@ pub struct KnownledgeDocument {
 /// it will use the value when remove document
 ///
 /// # Arguments
-/// 
+///
 /// *`index_path` - path to create index
 ///
-/// # Returns: 
-/// 
+/// # Returns:
+///
 /// () or Error if index creation failed
 ///
 
@@ -68,11 +68,11 @@ pub fn create_index(index_path: String) -> tantivy::Result<()> {
 /// It will register Cang-jie Tokenizer for Chinese characters
 ///
 /// # Arguments
-/// 
+///
 /// * `index_path` - path to load index from
 ///
 /// # Returns:
-/// 
+///
 /// Index or error
 ///
 pub fn load_index(index_path: String) -> tantivy::Result<(Index, IndexReader)> {
@@ -90,15 +90,19 @@ pub fn load_index(index_path: String) -> tantivy::Result<(Index, IndexReader)> {
 /// Add a single new document to the repository
 ///
 /// # Arguments
-/// 
+///
 /// * `index` - The reference to the tantivy index
 /// * `doc` - The document to be add
 /// * `reader` - The global tantivy reader
 ///
 ///  # Returns:
-/// 
+///
 /// The create time in string or error
-pub fn add_doc(index: &Index, doc: KnownledgeDocument, reader: &IndexReader) -> tantivy::Result<String> {
+pub fn add_doc(
+    index: &Index,
+    doc: KnownledgeDocument,
+    reader: &IndexReader,
+) -> tantivy::Result<String> {
     let mut index_writer = index.writer(50_000_000)?;
 
     let now = now();
@@ -112,15 +116,19 @@ pub fn add_doc(index: &Index, doc: KnownledgeDocument, reader: &IndexReader) -> 
 /// Add a batch documents to the repository
 ///
 /// # Arguments
-/// 
+///
 /// * `index` - The reference to the tantivy index
 /// * `docs` - The documents to be add
 /// * `reader` - The global tantivy reader
 ///
 ///  # Returns:
-/// 
+///
 /// () or error
-pub fn add_doc_in_batch(index: &Index, docs: Vec<KnownledgeDocument>, reader: &IndexReader) -> tantivy::Result<()> {
+pub fn add_doc_in_batch(
+    index: &Index,
+    docs: Vec<KnownledgeDocument>,
+    reader: &IndexReader,
+) -> tantivy::Result<()> {
     let mut index_writer = index.writer(50_000_000)?;
 
     for doc in docs {
@@ -129,7 +137,7 @@ pub fn add_doc_in_batch(index: &Index, docs: Vec<KnownledgeDocument>, reader: &I
         index_writer.add_document(document)?;
     }
     index_writer.commit()?;
-    reader.reload()?;  //refersh the reader;
+    reader.reload()?; //refersh the reader;
     Ok(())
 }
 
@@ -139,7 +147,8 @@ pub enum Combiner {
     OR,
 }
 
-/// Query the documents for the given `keys` max `num` results.
+/// Query the documents for the given `keys` on Title and Body fields,
+/// Max `num` results.
 ///
 /// # Arguments
 ///
@@ -152,7 +161,7 @@ pub enum Combiner {
 /// # Returns
 ///
 /// A vector of `KnownledgeDocument`s that match the search keys.
-pub fn query(
+pub fn query_title_body(
     index: &Index,
     reader: &IndexReader,
     keys: Vec<String>,
@@ -173,6 +182,7 @@ pub fn query(
     let query_parser = QueryParser::for_index(&index, vec![title, body]);
 
     let bool_query = build_bool_query(&query_parser, op, keys)?;
+
     let top_docs = searcher.search(&bool_query, &TopDocs::with_limit(num))?;
 
     let mut result: Vec<KnownledgeDocument> = Vec::with_capacity(num);
@@ -202,15 +212,49 @@ pub fn query(
     Ok(result)
 }
 
+/// Delete all documents in the repository
+pub fn delele_all(index: &Index, reader: &IndexReader) -> tantivy::Result<()> {
+    let mut index_writer = index.writer(10_000_000)?;
+    index_writer.delete_all_documents()?;
+    index_writer.commit()?;
+    reader.reload()?;
+    Ok(())
+}
+/// Delete a document from the repository based on its title and create timestamp.
+///
+/// # Arguments
+///
+/// * `index` - The reference to the tantivy index.
+/// * `reader` - The global tantivy reader.
+/// * `title_key` - The title of the document to be deleted.
+/// * `ts` - The create timestamp of the document to be deleted. sample: 2023-12-22T12:58:00Z
+///
+/// # Returns
+///
+/// () or error
+pub fn delete<'a>(index: &Index, reader: &IndexReader, title_key: &'a str, ts:&'a str)->tantivy::Result<()> where{
+    let schema = index.schema();
+    let title = schema.get_field("title").unwrap();
+    let create_at = schema.get_field("create_at").unwrap();
+
+    let query_parser_ts = QueryParser::for_index(&index, vec![create_at]);
+    let query_ts = query_parser_ts.parse_query(&*format!("\"create_at:\"{}\"",ts))?;
+    let query_parser_title = QueryParser::for_index(&index, vec![title]);
+    let query_title = query_parser_title.parse_query(title_key)?;
+    let bool_query = BooleanQuery::new(vec![(Occur::Must,query_ts),(Occur::Must,query_title)]);
+
+    let mut index_writer = index.writer(10_000_000)?;
+    index_writer.delete_query(Box::new(bool_query))?;
+    index_writer.commit()?;
+    reader.reload()?;
+    Ok(())
+}
+/// Combine multiple queries into one BoolQuery
 fn build_bool_query(
     query_parser: &QueryParser,
     op: Combiner,
     keys: Vec<String>,
 ) -> tantivy::Result<BooleanQuery> {
-    // let schema = index.schema();
-    // let title = schema.get_field("title").unwrap();
-    // let body = schema.get_field("body").unwrap();
-    // let query_parser = QueryParser::for_index(&index, vec![title, body]);
     let logic_op = match op {
         Combiner::AND => Occur::Must,
         Combiner::OR => Occur::Should,
@@ -243,10 +287,13 @@ fn make_doc<'a>(
     Ok(document)
 }
 
-/// create schema
-///     title: string
-///     body: string
-///     created_at: date
+/// Create schema
+///  
+/// #Fields
+///
+/// * `title`: string
+/// * `body`: string
+/// * `created_at`: date
 fn make_schema() -> Schema {
     let mut schema_builder = Schema::builder();
 
@@ -272,6 +319,20 @@ fn now() -> String {
     Local::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_now() {
+        let now = now();
+        assert!(now.len() == 24 );
+        assert!(now.contains('-'));
+        assert!(now.contains('T'));
+        assert!(now.contains(':'));
+        assert!(now.contains('.'));
+    }
+}
 // fn add_documents(index: &Index, schema: &Schema) -> tantivy::Result<()> {
 //     let mut index_writer = index.writer(50_000_000)?;
 //     let title = schema.get_field("title")?;
