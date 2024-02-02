@@ -85,7 +85,6 @@ impl KnownledgeDocumentWithTime {
         })
     }
 }
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub enum Combiner {
     AND,
     OR,
@@ -220,15 +219,11 @@ pub fn query_title_body(
     if keys.len() == 0 {
         return Ok(vec![]);
     }
-
     // reader.reload()?; //reload in udpate APIs
-
     let (title, body, create_at) = get_fields(&index)?;
 
     let query_parser = QueryParser::for_index(&index, vec![title, body]);
-
     let bool_query = build_bool_query(&query_parser, op, keys)?;
-
     let searcher = reader.searcher();
     let top_docs: Vec<(f32, tantivy::DocAddress)> =
         searcher.search(&bool_query, &TopDocs::with_limit(num))?;
@@ -317,7 +312,7 @@ pub fn delete(
     title_key: &str,
     ts: &str,
 ) -> tantivy::Result<()> where {
-    let (title, _, create_at)= get_fields(index)?;
+    let (title, _, create_at) = get_fields(index)?;
 
     let query_parser_ts = QueryParser::for_index(&index, vec![create_at]);
     let query_ts = query_parser_ts.parse_query(&*format!("create_at:\"{}\"", ts))?;
@@ -325,7 +320,9 @@ pub fn delete(
     let query_title = query_parser_title.parse_query(title_key)?;
     let bool_query = BooleanQuery::new(vec![(Occur::Must, query_ts), (Occur::Must, query_title)]);
 
-    let top_docs = reader.searcher().search(&bool_query, &TopDocs::with_limit(1))?;
+    let top_docs = reader
+        .searcher()
+        .search(&bool_query, &TopDocs::with_limit(1))?;
     println!("top_docs: {:?}", top_docs.len());
 
     let mut index_writer = index.writer(15_000_000)?;
@@ -408,14 +405,14 @@ mod tests {
     fn test_now() {
         let now = now();
         println!("now : {}", now);
-        assert!(now.len() == 24  );
+        assert!(now.len() == 24);
         assert!(now.contains('-'));
         assert!(now.contains('T'));
         assert!(now.contains(':'));
         assert!(now.contains('.'));
     }
     #[test]
-    fn test_all(){
+    fn test_all() {
         create_repository();
         load_and_search();
         delete_test();
@@ -454,6 +451,18 @@ mod tests {
         let begin = std::time::Instant::now();
         let (index, reader) = load_index("index_test").unwrap();
         let loaded = std::time::Instant::now();
+        assert_eq!(
+            0,
+            query_title_body(&index, &reader, vec![], Combiner::OR, 10)
+                .unwrap()
+                .len()
+        );
+        assert_eq!(
+            10,
+            query_title_body(&index, &reader, vec!["儿童", "头痛"], Combiner::OR, 10)
+            .unwrap()
+            .len()
+        );
         let res =
             query_title_body(&index, &reader, vec!["儿童", "头痛"], Combiner::AND, 10).unwrap();
         let query = std::time::Instant::now();

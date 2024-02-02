@@ -1,3 +1,4 @@
 /target
 /index_test
 *.profraw
+.DS_store
