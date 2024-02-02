@@ -89,14 +89,13 @@ pub enum Combiner {
     AND,
     OR,
 }
-/// The function that will create tantivy index in the path
-/// it will clear the path first, everything in the path will be removed.
+/// The function that will create tantivy index in the path.
+/// It will clear the path first, everything in the path will be removed.
 ///
-/// The schema is solid which has three fields: title, body and create_at
-/// title is Text field in Chinese characters
-/// body is Text field in Chinese characters
-/// create_at is Date field which auto generated when create the document,
-/// it will use the value when remove document
+/// The schema is solid which has three fields: title, body and create_at.
+/// `title` and `body` are Text fields in Chinese characters.
+/// `create_at` is a Date field which auto generated when create the document,
+/// which will be used when remove document.
 ///
 /// # Arguments
 ///
@@ -460,8 +459,8 @@ mod tests {
         assert_eq!(
             10,
             query_title_body(&index, &reader, vec!["儿童", "头痛"], Combiner::OR, 10)
-            .unwrap()
-            .len()
+                .unwrap()
+                .len()
         );
         let res =
             query_title_body(&index, &reader, vec!["儿童", "头痛"], Combiner::AND, 10).unwrap();
