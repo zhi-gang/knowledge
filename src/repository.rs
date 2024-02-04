@@ -312,18 +312,13 @@ pub fn delete(
     ts: &str,
 ) -> tantivy::Result<()> where {
     let (title, _, create_at) = get_fields(index)?;
-
+    //build query
     let query_parser_ts = QueryParser::for_index(&index, vec![create_at]);
     let query_ts = query_parser_ts.parse_query(&*format!("create_at:\"{}\"", ts))?;
     let query_parser_title = QueryParser::for_index(&index, vec![title]);
     let query_title = query_parser_title.parse_query(title_key)?;
     let bool_query = BooleanQuery::new(vec![(Occur::Must, query_ts), (Occur::Must, query_title)]);
-
-    let top_docs = reader
-        .searcher()
-        .search(&bool_query, &TopDocs::with_limit(1))?;
-    println!("top_docs: {:?}", top_docs.len());
-
+    //delete 
     let mut index_writer = index.writer(15_000_000)?;
     index_writer.delete_query(Box::new(bool_query))?;
     index_writer.commit()?;
