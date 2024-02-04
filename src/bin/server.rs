@@ -51,13 +51,16 @@ async fn main() -> anyhow::Result<()> {
 
 fn create_app() -> Router {
     Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
+        .route("/v1", get(|| async { "Hello, World!" }))
         .route(
             "/v1/knowledge/repository",
             put(router::load_index).post(router::create_index),
         )
         .route(
             "/v1/knowledge/query_title_body",post(router::find_document)
+        ) 
+        .route(
+            "/v1/knowledge/new_doc",post(router::push_documents)
         )
         .layer(
             tower_http::cors::CorsLayer::new()

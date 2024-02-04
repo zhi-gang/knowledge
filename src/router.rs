@@ -95,14 +95,14 @@ pub async fn find_document(Json(payload): Json<DocQueryOnTitleAndBody>) -> impl 
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct NewDoc {
-    docs: Vec<KnownledgeDocument>,
-}
+// #[derive(Debug, Deserialize)]
+// pub struct NewDoc {
+//     docs: Vec<KnownledgeDocument>,
+// }
 
 #[instrument]
-pub async fn push_documents(Json(payload): Json<NewDoc>) -> impl IntoResponse {
-    let (index, reader) = unsafe { (G_INDEX.read().unwrap(), G_READER.read().unwrap()) };
+pub async fn push_documents(Json(payload): Json<Vec<KnownledgeDocument>>) -> impl IntoResponse {
+    let (index, reader) = unsafe { (G_INDEX.write().unwrap(), G_READER.write().unwrap()) };
 
     if index.is_none() || reader.is_none() {
         (
@@ -113,7 +113,7 @@ pub async fn push_documents(Json(payload): Json<NewDoc>) -> impl IntoResponse {
         match repository::add_doc_in_batch(
             &index.as_ref().unwrap(),
             &reader.as_ref().unwrap(),
-            payload.docs){
+            payload){
             Ok(_) => (StatusCode::OK, Json("OK".to_string())),
             Err(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
