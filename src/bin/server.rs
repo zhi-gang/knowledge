@@ -1,7 +1,8 @@
-use axum::routing::get;
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use clap::Parser;
 use knowledge::agrument::KnowledgeArgument;
+use knowledge::router;
 use tower_http::cors::Any;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::info;
@@ -13,7 +14,7 @@ use tracing_subscriber::{fmt, EnvFilter, Registry};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = KnowledgeArgument::parse();
-    println!("args: {},{}",args.host,args.port);
+    println!("args: {},{}", args.host, args.port);
 
     //logger init. Cannot wrap the initialization into a function, if that the logger file may not work properly!
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -34,17 +35,10 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Start Knolwdge at {:?}", std::env::current_dir().unwrap());
 
-    let app = Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
-        .layer(
-            tower_http::cors::CorsLayer::new()
-                .allow_methods(Any)
-                .allow_origin(Any),
-        )
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
-        );
+    //create app with routers
+    let app = create_app();
+
+    //start http server
     let http_service_url = format!("{}:{}", args.host, args.port);
     let listener = tokio::net::TcpListener::bind(http_service_url)
         .await
@@ -53,4 +47,25 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await.unwrap();
 
     Ok(())
+}
+
+fn create_app() -> Router {
+    Router::new()
+        .route("/", get(|| async { "Hello, World!" }))
+        .route(
+            "/v1/knowledge/repository",
+            put(router::load_index).post(router::create_index),
+        )
+        .route(
+            "/v1/knowledge/query_title_body",post(router::find_document)
+        )
+        .layer(
+            tower_http::cors::CorsLayer::new()
+                .allow_methods(Any)
+                .allow_origin(Any),
+        )
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        )
 }

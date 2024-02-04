@@ -33,6 +33,12 @@ pub struct KnownledgeDocument {
     title: String,
     body: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KnowledgeQueryResult{
+    SUCCESS(Vec<KnownledgeDocumentWithTime>),
+    Failed(String),
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KnownledgeDocumentWithTime {
     doc: KnownledgeDocument,
@@ -85,6 +91,7 @@ impl KnownledgeDocumentWithTime {
         })
     }
 }
+#[derive(Debug, Deserialize)]
 pub enum Combiner {
     AND,
     OR,
@@ -318,7 +325,7 @@ pub fn delete(
     let query_parser_title = QueryParser::for_index(&index, vec![title]);
     let query_title = query_parser_title.parse_query(title_key)?;
     let bool_query = BooleanQuery::new(vec![(Occur::Must, query_ts), (Occur::Must, query_title)]);
-    //delete 
+    //delete
     let mut index_writer = index.writer(15_000_000)?;
     index_writer.delete_query(Box::new(bool_query))?;
     index_writer.commit()?;
