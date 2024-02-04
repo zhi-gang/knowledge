@@ -150,6 +150,9 @@ pub fn load_index(index_path: &str) -> tantivy::Result<(Index, IndexReader)> {
     Ok((index, reader))
 }
 /// Add a single new document to the repository
+/// 
+/// It very cost to commit the changes to the repository,recomend to ues `add_doc_batch` method
+/// unless it's sure there is only one document to be added.
 ///
 /// # Arguments
 ///

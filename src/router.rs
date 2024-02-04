@@ -1,10 +1,12 @@
+//! This module implments the router APIs to interact with the Repository interface
+
 use std::sync::RwLock;
 
-use crate::repository::{Combiner, KnowledgeQueryResult};
+use crate::repository::{Combiner, KnowledgeQueryResult, KnownledgeDocument};
 
 use super::repository;
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use tantivy::{Index, IndexReader};
 use tracing::instrument;
 
@@ -88,6 +90,34 @@ pub async fn find_document(Json(payload): Json<DocQueryOnTitleAndBody>) -> impl 
             Err(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(KnowledgeQueryResult::Failed(e.to_string())),
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NewDoc {
+    docs: Vec<KnownledgeDocument>,
+}
+
+#[instrument]
+pub async fn push_documents(Json(payload): Json<NewDoc>) -> impl IntoResponse {
+    let (index, reader) = unsafe { (G_INDEX.read().unwrap(), G_READER.read().unwrap()) };
+
+    if index.is_none() || reader.is_none() {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json("index or reader is none".to_string()),
+        )
+    } else {
+        match repository::add_doc_in_batch(
+            &index.as_ref().unwrap(),
+            &reader.as_ref().unwrap(),
+            payload.docs){
+            Ok(_) => (StatusCode::OK, Json("OK".to_string())),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(e.to_string()),
             ),
         }
     }
