@@ -8,7 +8,7 @@ use super::repository;
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::Deserialize;
 use tantivy::{Index, IndexReader};
-use tracing::instrument;
+use tracing::{error, instrument};
 
 static mut G_INDEX: RwLock<Option<Index>> = RwLock::new(None);
 static mut G_READER: RwLock<Option<IndexReader>> = RwLock::new(None);
@@ -72,6 +72,7 @@ pub async fn find_document(Json(payload): Json<DocQueryOnTitleAndBody>) -> impl 
     let (index, reader) = unsafe { (G_INDEX.read().unwrap(), G_READER.read().unwrap()) };
 
     if index.is_none() || reader.is_none() {
+        error!( "index or reader is none");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(KnowledgeQueryResult::Failed(
@@ -100,6 +101,7 @@ pub async fn push_documents(Json(payload): Json<Vec<KnownledgeDocument>>) -> imp
     let (index, reader) = unsafe { (G_INDEX.write().unwrap(), G_READER.write().unwrap()) };
 
     if index.is_none() || reader.is_none() {
+        error!( "index or reader is none");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json("index or reader is none".to_string()),
@@ -126,6 +128,7 @@ pub async fn find_document_by_title(Json(payload): Json<DocQueryOnTitle>) -> imp
     let (index, reader) = unsafe { (G_INDEX.read().unwrap(), G_READER.read().unwrap()) };
 
     if index.is_none() || reader.is_none() {
+        error!( "index or reader is none");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(KnowledgeQueryResult::Failed(
@@ -158,6 +161,7 @@ pub async fn delete_document(Json(payload): Json<DocRemove>) -> impl IntoRespons
     let (index, reader) = unsafe { (G_INDEX.write().unwrap(), G_READER.write().unwrap()) };
 
     if index.is_none() || reader.is_none() {
+        error!( "index or reader is none");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json("index or reader is none".to_string()),
