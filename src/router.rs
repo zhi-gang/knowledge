@@ -6,7 +6,7 @@ use crate::repository::{Combiner, KnowledgeQueryResult, KnownledgeDocument};
 
 use super::repository;
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tantivy::{Index, IndexReader};
 use tracing::instrument;
 
@@ -22,7 +22,7 @@ const REPOSITPRY_PATH: &str = "repository";
 pub async fn create_index() -> impl IntoResponse {
     match repository::create_index(REPOSITPRY_PATH) {
         Ok((index, reader)) => unsafe {
-            *G_INDEX.write().unwrap() = Some(index);
+            *G_INDEX.write().unwrap() = Some(index); //shall manage the memory older index and reader?
             *G_READER.write().unwrap() = Some(reader);
             (StatusCode::OK, Json("OK".to_string()))
         },
@@ -95,11 +95,6 @@ pub async fn find_document(Json(payload): Json<DocQueryOnTitleAndBody>) -> impl 
     }
 }
 
-// #[derive(Debug, Deserialize)]
-// pub struct NewDoc {
-//     docs: Vec<KnownledgeDocument>,
-// }
-
 #[instrument]
 pub async fn push_documents(Json(payload): Json<Vec<KnownledgeDocument>>) -> impl IntoResponse {
     let (index, reader) = unsafe { (G_INDEX.write().unwrap(), G_READER.write().unwrap()) };
@@ -113,12 +108,69 @@ pub async fn push_documents(Json(payload): Json<Vec<KnownledgeDocument>>) -> imp
         match repository::add_doc_in_batch(
             &index.as_ref().unwrap(),
             &reader.as_ref().unwrap(),
-            payload){
+            payload,
+        ) {
             Ok(_) => (StatusCode::OK, Json("OK".to_string())),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DocQueryOnTitle {
+    title: String,
+    limit: usize,
+}
+#[instrument]
+pub async fn find_document_by_title(Json(payload): Json<DocQueryOnTitle>) -> impl IntoResponse {
+    let (index, reader) = unsafe { (G_INDEX.read().unwrap(), G_READER.read().unwrap()) };
+
+    if index.is_none() || reader.is_none() {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(KnowledgeQueryResult::Failed(
+                "index or reader is none".to_string(),
+            )),
+        )
+    } else {
+        match repository::query_title(
+            &index.as_ref().unwrap(),
+            &reader.as_ref().unwrap(),
+            &*payload.title,
+            payload.limit,
+        ) {
+            Ok(docs) => (StatusCode::OK, Json(KnowledgeQueryResult::SUCCESS(docs))),
             Err(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(e.to_string()),
+                Json(KnowledgeQueryResult::Failed(e.to_string())),
             ),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DocRemove {
+    title: String,
+    ts: String,
+}
+#[instrument]
+pub async fn delete_document(Json(payload): Json<DocRemove>) -> impl IntoResponse {
+    let (index, reader) = unsafe { (G_INDEX.write().unwrap(), G_READER.write().unwrap()) };
+
+    if index.is_none() || reader.is_none() {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json("index or reader is none".to_string()),
+        )
+    } else {
+        match repository::delete(
+            &index.as_ref().unwrap(),
+            &reader.as_ref().unwrap(),
+            &*payload.title,
+            &*payload.ts
+        ) {
+            Ok(_) => (StatusCode::OK, Json("OK".to_string())),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())),
         }
     }
 }

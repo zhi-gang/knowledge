@@ -1,4 +1,4 @@
-use axum::routing::{delete, get, post, put};
+use axum::routing::{get, post, put};
 use axum::Router;
 use clap::Parser;
 use knowledge::agrument::KnowledgeArgument;
@@ -51,16 +51,22 @@ async fn main() -> anyhow::Result<()> {
 
 fn create_app() -> Router {
     Router::new()
-        .route("/v1", get(|| async { "Hello, World!" }))
+        .route("/v1", get(|| async { "Hello" }))
         .route(
             "/v1/knowledge/repository",
             put(router::load_index).post(router::create_index),
         )
         .route(
-            "/v1/knowledge/query_title_body",post(router::find_document)
-        ) 
+            "/v1/knowledge/query_title_body",
+            post(router::find_document),
+        )
         .route(
-            "/v1/knowledge/new_doc",post(router::push_documents)
+            "/v1/knowledge/query_title",
+            post(router::find_document_by_title),
+        )
+        .route(
+            "/v1/knowledge/doc",
+            post(router::push_documents).delete(router::delete_document),
         )
         .layer(
             tower_http::cors::CorsLayer::new()

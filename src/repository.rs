@@ -4,9 +4,7 @@
 //!
 //! author: ZhiGang
 //!
-//!
-//! TODO: add logger
-//!
+
 
 use cang_jie::{CangJieTokenizer, CANG_JIE};
 use chrono::Local;
@@ -27,6 +25,7 @@ use tantivy::IndexReader;
 use tantivy::ReloadPolicy;
 use tantivy::Searcher;
 use tantivy::TantivyError;
+use tracing::debug;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KnownledgeDocument {
@@ -35,7 +34,7 @@ pub struct KnownledgeDocument {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum KnowledgeQueryResult{
+pub enum KnowledgeQueryResult {
     SUCCESS(Vec<KnownledgeDocumentWithTime>),
     Failed(String),
 }
@@ -112,6 +111,7 @@ pub enum Combiner {
 ///
 /// (Index and Reader) or Error if index creation failed
 pub fn create_index(index_path: &str) -> tantivy::Result<(Index, IndexReader)> {
+    debug!(?index_path, "create_index");
     let _ = fs::remove_dir_all(&*index_path); //ignore error if directory does not exist
     fs::create_dir(&*index_path)?;
 
@@ -139,6 +139,7 @@ pub fn create_index(index_path: &str) -> tantivy::Result<(Index, IndexReader)> {
 ///
 /// Index or error
 pub fn load_index(index_path: &str) -> tantivy::Result<(Index, IndexReader)> {
+    debug!(?index_path, "load_index");
     let index = Index::open_in_dir(index_path)?;
     index
         .tokenizers()
@@ -150,7 +151,7 @@ pub fn load_index(index_path: &str) -> tantivy::Result<(Index, IndexReader)> {
     Ok((index, reader))
 }
 /// Add a single new document to the repository
-/// 
+///
 /// It very cost to commit the changes to the repository,recomend to ues `add_doc_batch` method
 /// unless it's sure there is only one document to be added.
 ///
@@ -168,6 +169,7 @@ pub fn add_doc(
     reader: &IndexReader,
     doc: KnownledgeDocument,
 ) -> tantivy::Result<String> {
+    debug!(?doc, "add_doc");
     let mut index_writer = index.writer(50_000_000)?;
 
     let now = now();
@@ -193,6 +195,7 @@ pub fn add_doc_in_batch(
     reader: &IndexReader,
     docs: Vec<KnownledgeDocument>,
 ) -> tantivy::Result<()> {
+    debug!("add_docs, num: {}", docs.len());
     let mut index_writer = index.writer(50_000_000)?;
 
     for doc in docs {
@@ -225,6 +228,7 @@ pub fn query_title_body(
     op: Combiner,
     num: usize,
 ) -> tantivy::Result<Vec<KnownledgeDocumentWithTime>> {
+    debug!("query_title_body, keys: {:?}, combiner:{:?}", keys, op);
     if keys.len() == 0 {
         return Ok(vec![]);
     }
@@ -257,6 +261,7 @@ pub fn query_title(
     title_str: &str,
     num: usize,
 ) -> tantivy::Result<Vec<KnownledgeDocumentWithTime>> {
+    debug!("query_title, key: {:?}, ", title_str);
     let (title, body, create_at) = get_fields(&index)?;
 
     let query_parser = QueryParser::for_index(&index, vec![title]);
@@ -297,6 +302,7 @@ fn get_fields(index: &Index) -> tantivy::Result<(Field, Field, Field)> {
 }
 /// Delete all documents in the repository
 pub fn delele_all(index: &Index, reader: &IndexReader) -> tantivy::Result<()> {
+    debug!("delete all");
     let mut index_writer = index.writer(15_000_000)?;
     index_writer.delete_all_documents()?;
     index_writer.commit()?;
@@ -320,7 +326,8 @@ pub fn delete(
     reader: &IndexReader,
     title_key: &str,
     ts: &str,
-) -> tantivy::Result<()> where {
+) -> tantivy::Result<()> {
+    debug!("delete titile: {}, ts: {}", title_key, ts);
     let (title, _, create_at) = get_fields(index)?;
     //build query
     let query_parser_ts = QueryParser::for_index(&index, vec![create_at]);
