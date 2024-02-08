@@ -29,7 +29,9 @@ use tracing::debug;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KnownledgeDocument {
+    #[serde(default)]
     title: String,
+    #[serde(default)]
     body: String,
 }
 
@@ -40,7 +42,9 @@ pub enum KnowledgeQueryResult {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KnownledgeDocumentWithTime {
+    #[serde(flatten)]
     doc: KnownledgeDocument,
+    #[serde(default)]
     create_at: String,
 }
 impl KnownledgeDocumentWithTime {
