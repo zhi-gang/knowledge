@@ -4,3 +4,4 @@
 *.profraw
 .DS_store
 /repository
+/dist
