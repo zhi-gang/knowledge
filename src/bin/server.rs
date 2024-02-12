@@ -71,6 +71,14 @@ fn create_app() -> Router {
         .layer(
             tower_http::cors::CorsLayer::new()
                 .allow_methods(Any)
+                // .allow_methods([
+                //     Method::GET,
+                //     Method::POST,
+                //     Method::PUT,
+                //     Method::DELETE,
+                //     Method::OPTIONS,
+                // ])
+                .allow_headers(Any)
                 .allow_origin(Any),
         )
         .layer(
