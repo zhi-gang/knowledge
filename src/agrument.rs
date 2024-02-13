@@ -8,4 +8,7 @@ pub struct KnowledgeArgument{
 
     #[arg(short, long, default_value ="4000")]  
     pub port: u16,
+
+    #[arg(short, long,default_value = "false")]
+    pub load: bool
 }

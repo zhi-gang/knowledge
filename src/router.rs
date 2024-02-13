@@ -34,7 +34,7 @@ pub async fn create_index() -> impl IntoResponse {
 ///
 /// This function will update the globa index and reader
 #[instrument]
-pub async fn load_index() -> impl IntoResponse {
+pub async fn load_index() -> (StatusCode, Json<String>) {
     match repository::load_index(REPOSITPRY_PATH) {
         Ok((index, reader)) => unsafe {
             *G_INDEX.write().unwrap() = Some(index);

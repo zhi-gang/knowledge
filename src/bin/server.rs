@@ -1,3 +1,4 @@
+use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::Router;
 use clap::Parser;
@@ -37,6 +38,14 @@ async fn main() -> anyhow::Result<()> {
 
     //create app with routers
     let app = create_app();
+
+    info!(args.load, "load repository when start: ");
+    if args.load {
+        let (code,msg) = router::load_index().await;
+        if code != StatusCode::OK{
+            return Err(anyhow::Error::msg(msg.as_str().to_string()));
+        }
+    }
 
     //start http server
     let http_service_url = format!("{}:{}", args.host, args.port);
